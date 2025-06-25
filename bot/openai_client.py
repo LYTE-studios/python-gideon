@@ -24,7 +24,6 @@ class OpenAIClient:
 
         # Add current date/time context in prompt
         import datetime
-        import pytz
         now = datetime.datetime.now(datetime.timezone.utc).astimezone()
         now_str = now.isoformat()
         tz_str = now.tzname() or str(now.utcoffset())
