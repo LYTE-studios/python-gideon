@@ -17,6 +17,30 @@ class GideonBot(discord.Client):
     async def on_ready(self):
         logger.info(f"Bot is online as {self.user}")
         logger.info(f"Listening in channel ID: {self.target_channel_id}")
+        # Permission check logging
+        try:
+            # Find the configured text channel in all connected guilds
+            target_channel = None
+            for guild in self.guilds:
+                chan = guild.get_channel(self.target_channel_id)
+                if chan:
+                    target_channel = chan
+                    break
+            if not target_channel:
+                logger.error(f"Target channel ID {self.target_channel_id} not found in any connected guild.")
+                return
+            needed_perms = {
+                "send_messages": target_channel.permissions_for(target_channel.guild.me).send_messages,
+                "view_channel": target_channel.permissions_for(target_channel.guild.me).view_channel,
+                "manage_events": target_channel.permissions_for(target_channel.guild.me).manage_events,
+            }
+            for perm, ok in needed_perms.items():
+                if not ok:
+                    logger.error(f"Missing required permission: {perm} in {target_channel}")
+            if not all(needed_perms.values()):
+                logger.error("Bot startup: insufficient permissions in the target channel. Some features will not work!")
+        except Exception as e:
+            logger.error(f"Error checking permissions at startup: {e}")
 
     async def on_message(self, message):
         # Ignore messages from the bot itself (or other bots)
@@ -46,14 +70,16 @@ class GideonBot(discord.Client):
 
         # typing only if we are actually responding
         async with message.channel.typing():
-            # Look for [SCHEDULE_EVENT] block
+            # Look for event blocks in response
             sched_match = re.search(r"\[SCHEDULE_EVENT\](.*?)\[/SCHEDULE_EVENT\]", response, re.DOTALL)
+            update_match = re.search(r"\[UPDATE_EVENT\](.*?)\[/UPDATE_EVENT\]", response, re.DOTALL)
+            cancel_match = re.search(r"\[CANCEL_EVENT\](.*?)\[/CANCEL_EVENT\]", response, re.DOTALL)
+
             if sched_match:
                 block = sched_match.group(1).strip()
                 try:
                     event_data = json.loads(block)
                     logger.info(f"Scheduling Discord event: {event_data}")
-                    # Try to schedule event; use a helper for clarity
                     await self.create_discord_event(message, event_data)
                     return
                 except Exception as e:
@@ -61,6 +87,36 @@ class GideonBot(discord.Client):
                     logger.error(error_log)
                     await message.channel.send(
                         "Sorry, I couldn't schedule that event (invalid details or Discord error).\n"
+                        f"```py\n{error_log}\n```"
+                    )
+                    return
+            elif update_match:
+                block = update_match.group(1).strip()
+                try:
+                    event_data = json.loads(block)
+                    logger.info(f"Updating Discord event: {event_data}")
+                    await self.update_discord_event(message, event_data)
+                    return
+                except Exception as e:
+                    error_log = f"Failed to parse or update event: {e}\nBlock:{block}"
+                    logger.error(error_log)
+                    await message.channel.send(
+                        "Sorry, I couldn't update that event (invalid details or Discord error).\n"
+                        f"```py\n{error_log}\n```"
+                    )
+                    return
+            elif cancel_match:
+                block = cancel_match.group(1).strip()
+                try:
+                    event_data = json.loads(block)
+                    logger.info(f"Cancelling Discord event: {event_data}")
+                    await self.cancel_discord_event(message, event_data)
+                    return
+                except Exception as e:
+                    error_log = f"Failed to parse or cancel event: {e}\nBlock:{block}"
+                    logger.error(error_log)
+                    await message.channel.send(
+                        "Sorry, I couldn't cancel that event (invalid details or Discord error).\n"
                         f"```py\n{error_log}\n```"
                     )
                     return
@@ -143,6 +199,78 @@ class GideonBot(discord.Client):
                 "Sorry, something went wrong creating the event in Discord!\n"
                 f"```py\n{error_log}\n```"
             )
+
+    async def update_discord_event(self, message, event_data):
+        """
+        Update a scheduled event based on event_data.
+        """
+        guild = message.guild
+        if not guild:
+            await message.channel.send("Could not update event: not in a server.")
+            return
+        try:
+            title = event_data.get("title")
+            dt_str = event_data.get("datetime")
+            new_fields = event_data.get("fields_to_update", {})
+            found_event = await self._find_event(guild, title, dt_str)
+            if not found_event:
+                await message.channel.send(f"Sorry, couldn't find an event to update for title/datetime: {title} / {dt_str}")
+                return
+            await found_event.edit(**new_fields)
+            await message.channel.send(f"✅ Updated event **{title}**.")
+        except Exception as e:
+            error_log = f"Event update failed: {e}"
+            logger.error(error_log)
+            await message.channel.send(
+                "Sorry, something went wrong updating the event!\n"
+                f"```py\n{error_log}\n```"
+            )
+
+    async def cancel_discord_event(self, message, event_data):
+        """
+        Cancel/delete a scheduled event based on event_data.
+        """
+        guild = message.guild
+        if not guild:
+            await message.channel.send("Could not cancel event: not in a server.")
+            return
+        try:
+            title = event_data.get("title")
+            dt_str = event_data.get("datetime")
+            found_event = await self._find_event(guild, title, dt_str)
+            if not found_event:
+                await message.channel.send(f"Sorry, couldn't find an event to cancel for title/datetime: {title} / {dt_str}")
+                return
+            await found_event.delete()
+            await message.channel.send(f"🗑️ Cancelled event **{title}**.")
+        except Exception as e:
+            error_log = f"Event cancel failed: {e}"
+            logger.error(error_log)
+            await message.channel.send(
+                "Sorry, something went wrong canceling the event!\n"
+                f"```py\n{error_log}\n```"
+            )
+
+    async def _find_event(self, guild, title, dt_str):
+        """
+        Find the closest matching scheduled event by title and datetime (ISO), fallback to best match.
+        """
+        events = await guild.fetch_scheduled_events()
+        for ev in events:
+            if dt_str:
+                try:
+                    iso_cmp = ev.scheduled_start_time.isoformat().replace("+00:00", "Z")
+                    # Allow match with or without ms, Z or not
+                    if iso_cmp.startswith(dt_str.replace("+00:00", "Z")) or dt_str.startswith(iso_cmp):
+                        if title and title.lower() in ev.name.lower():
+                            return ev
+                        if not title:
+                            return ev
+                except Exception:
+                    continue
+            if title and title.lower() in ev.name.lower():
+                return ev
+        return None
 
 from bot.openai_client import OpenAIClient
 
