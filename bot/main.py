@@ -88,8 +88,11 @@ class GideonBot(discord.Client):
                     return True
             return False
 
+        channel_name = str(message.channel.name).lower() if hasattr(message.channel, 'name') else ""
         persona = "developer" if is_code_question(content) else "assistant"
-        response = await self.openai_client.ask_chatgpt(content, bot_names=bot_names, history=history, persona=persona)
+        response = await self.openai_client.ask_chatgpt(
+            content, bot_names=bot_names, history=history, persona=persona, channel_name=channel_name
+        )
         if response.strip().upper() == "NO_REPLY":
             logger.info("Assistant chose not to reply to this message.")
             return

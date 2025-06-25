@@ -10,17 +10,20 @@ class OpenAIClient:
         self.model = model
         self.api_url = "https://api.openai.com/v1/chat/completions"
 
-    async def ask_chatgpt(self, message: str, bot_names=None, history=None, persona="assistant") -> str:
+    async def ask_chatgpt(self, message: str, bot_names=None, history=None, persona="assistant", channel_name="") -> str:
         """
         message: The discord message string to analyze/respond.
         bot_names: A list of recognized names/aliases for the bot (str or list)
         history: A list of {"role": "user"|"assistant", "content": str} dicts representing recent chat history.
         persona: "assistant" (default) or "developer" for code/software answers.
+        channel_name: The name of the Discord channel where this message was posted, for context.
         """
         if bot_names is None:
             bot_names = []
         if history is None:
             history = []
+        if channel_name is None:
+            channel_name = ""
         # allow both str and list
         if isinstance(bot_names, str):
             bot_names = [bot_names]
@@ -32,18 +35,25 @@ class OpenAIClient:
         now_str = now.isoformat()
         tz_str = now.tzname() or str(now.utcoffset())
 
+        dev_keywords = ["dev", "code", "engineering", "developer", "backend", "frontend", "python", "java", "typescript", "review"]
+        is_dev_channel = any(k in channel_name for k in dev_keywords)
+
         if persona == "developer":
             sys_prompt = (
                 f"It is now {now_str} ({tz_str}). "
+                f"This message was sent in the Discord channel '{channel_name}'. "
                 "You are Gideon, a senior software engineer developer on Discord. "
                 "You ONLY answer technical questions about programming, software, code, design, bugs, code review, or engineering topics. "
                 "If the user asks for help with code, architecture, dev tools, pull requests, or anything technical, reply in detail as a helpful, concise expert. "
                 "You may use Markdown code blocks and explain like a top Stack Overflow answer. "
+                f"If the current channel name contains development-related keywords (like dev, code, engineering), you SHOULD always answer technical questions even if not explicitly tagged. "
+                "If the channel is for casual chat (like 'coffee-machine', 'random', 'social'), only answer if you are directly addressed, mentioned, or tagged in a technical question—but still err on the side of helping if clearly called on. "
                 "If the question is not technical, or is about events/scheduling/personal help, reply ONLY (exactly) with 'NO_REPLY'."
             )
         else:
             sys_prompt = (
                 f"It is now {now_str} ({tz_str}). "
+                f"This message was sent in the Discord channel '{channel_name}'. "
                 f"You are Gideon, a Discord bot assistant. "
                 f"Your recognized names and aliases are: {names_str}. "
                 "You are extremely strict and careful NOT to respond to any messages unless you are directly, explicitly addressed. "
