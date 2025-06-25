@@ -20,10 +20,18 @@ class GideonBot(discord.Client):
         if message.author == self.user:
             return
 
-        if message.channel.id != self.target_channel_id:
-            return  # Ignore messages from other channels
+        # ASSISTANT CHANNEL: respond to all messages
+        if message.channel.id == self.target_channel_id:
+            content = message.content.strip()
+            logger.info(f"Assistant channel message: '{content}'")
+            if not content:
+                return
+            async with message.channel.typing():
+                response = await self.openai_client.ask_chatgpt(content)
+                await message.channel.send(response)
+            return
 
-        # Only respond if bot is mentioned in the message
+        # OTHER CHANNELS: only respond if bot is mentioned
         if self.user not in message.mentions:
             return
 
@@ -31,15 +39,16 @@ class GideonBot(discord.Client):
         content = message.content
         mention_str = f"<@{self.user.id}>"
         content = content.replace(mention_str, "").strip()
-        logger.info(f"Bot was mentioned. Extracted message: '{content}'")
+        logger.info(f"Bot was mentioned in non-assistant channel. Extracted message: '{content}'")
 
         if not content:
             # Don't respond to empty messages/mentions
             return
 
         # Call OpenAI to generate a reply
-        response = await self.openai_client.ask_chatgpt(content)
-        await message.channel.send(response)
+        async with message.channel.typing():
+            response = await self.openai_client.ask_chatgpt(content)
+            await message.channel.send(response)
 
 from bot.openai_client import OpenAIClient
 
