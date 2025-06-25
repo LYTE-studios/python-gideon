@@ -87,16 +87,29 @@ class GideonBot(discord.Client):
             if start_dt.tzinfo is None:
                 start_dt = start_dt.replace(tzinfo=timezone.utc)
             # Make event private to the guild/online location
-            scheduled_event = await guild.create_scheduled_event(
-                name=title[:100],
-                start_time=start_dt,
-                end_time=None,
-                description=desc[:1000] or "No description.",
-                channel=message.channel,
-                privacy_level=discord.PrivacyLevel.guild_only,
-                entity_type=discord.EntityType.voice if message.channel.type==discord.ChannelType.voice else discord.EntityType.external,
-                location="Discord" if message.channel.type!=discord.ChannelType.voice else None
-            )
+            # Decide event type
+            if message.channel.type == discord.ChannelType.voice:
+                entity_type = discord.EntityType.voice
+                scheduled_event = await guild.create_scheduled_event(
+                    name=title[:100],
+                    start_time=start_dt,
+                    end_time=None,
+                    description=desc[:1000] or "No description.",
+                    channel=message.channel,
+                    privacy_level=discord.PrivacyLevel.guild_only,
+                    entity_type=entity_type,
+                )
+            else:
+                entity_type = discord.EntityType.external
+                scheduled_event = await guild.create_scheduled_event(
+                    name=title[:100],
+                    start_time=start_dt,
+                    end_time=None,
+                    description=desc[:1000] or "No description.",
+                    privacy_level=discord.PrivacyLevel.guild_only,
+                    entity_type=entity_type,
+                    location="Discord"
+                )
             await message.channel.send(f"✅ Created event **{title}** for {start} ({tz})!")
         except Exception as e:
             error_log = f"Discord event creation failed: {e}"
