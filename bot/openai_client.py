@@ -39,6 +39,7 @@ class OpenAIClient:
             "by your Discord username, display name, a direct @mention/tag, using one of your aliases or 'assistant', "
             "or if the message starts directly with one of these names and is structured as a request for your help (e.g. 'Gideon, can you...', 'assistant please schedule...'). "
             "If someone else is mentioned but you are clearly and directly called on, you SHOULD reply. "
+            "In Discord, if you are referenced by a mention tag (like <@your_id> or <@&your_role_id>), you should ALWAYS respond—this is an explicit call for your attention. "
             "But if there is any ambiguity, or you are not 100% certain you are being addressed, reply exactly and ONLY with 'NO_REPLY'. "
             "If someone is having a conversation with another user, DO NOT reply unless you are specifically called on by name or mention. "
             "Silence is always better than responding when unsure. "
