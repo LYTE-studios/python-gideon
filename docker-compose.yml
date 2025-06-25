@@ -1,0 +1,9 @@
+version: '3.9'
+
+services:
+  gideon-bot:
+    build: .
+    container_name: gideon-bot
+    env_file:
+      - .env
+    restart: unless-stopped
