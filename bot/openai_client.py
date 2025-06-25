@@ -10,13 +10,16 @@ class OpenAIClient:
         self.model = model
         self.api_url = "https://api.openai.com/v1/chat/completions"
 
-    async def ask_chatgpt(self, message: str, bot_names=None) -> str:
+    async def ask_chatgpt(self, message: str, bot_names=None, history=None) -> str:
         """
         message: The discord message string to analyze/respond.
         bot_names: A list of recognized names/aliases for the bot (str or list)
+        history: A list of {"role": "user"|"assistant", "content": str} dicts representing recent chat history.
         """
         if bot_names is None:
             bot_names = []
+        if history is None:
+            history = []
         # allow both str and list
         if isinstance(bot_names, str):
             bot_names = [bot_names]
@@ -74,7 +77,8 @@ class OpenAIClient:
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": sys_prompt},
+                {"role": "system", "content": sys_prompt}
+            ] + history + [
                 {"role": "user", "content": message}
             ],
             "max_tokens": 256,

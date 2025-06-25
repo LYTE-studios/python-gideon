@@ -63,7 +63,17 @@ class GideonBot(discord.Client):
             "assistant",
             "gideon"
         ]
-        response = await self.openai_client.ask_chatgpt(content, bot_names=bot_names)
+        # Gather last 10 recent text messages (for context, oldest first)
+        history = []
+        async for msg in message.channel.history(limit=10, oldest_first=True):
+            # Only include regular user and bot text messages (skip system/non-content)
+            if not msg.content:
+                continue
+            role = "assistant" if msg.author.bot else "user"
+            # Optionally: Show only current user and bot messages
+            history.append({"role": role, "content": msg.content})
+
+        response = await self.openai_client.ask_chatgpt(content, bot_names=bot_names, history=history)
         if response.strip().upper() == "NO_REPLY":
             logger.info("Assistant chose not to reply to this message.")
             return
