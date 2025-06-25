@@ -57,8 +57,12 @@ class GideonBot(discord.Client):
                     await self.create_discord_event(message, event_data)
                     return
                 except Exception as e:
-                    logger.error(f"Failed to parse or create event: {e}\nBlock:{block}")
-                    await message.channel.send("Sorry, I couldn't schedule that event (invalid details or Discord error).")
+                    error_log = f"Failed to parse or create event: {e}\nBlock:{block}"
+                    logger.error(error_log)
+                    await message.channel.send(
+                        "Sorry, I couldn't schedule that event (invalid details or Discord error).\n"
+                        f"```py\n{error_log}\n```"
+                    )
                     return
 
             # Otherwise, normal response
@@ -78,7 +82,10 @@ class GideonBot(discord.Client):
             title = event_data.get("title", "Scheduled Event")
             desc = event_data.get("description", "")
             # For now, use text channel as location
+            from datetime import timezone
             start_dt = datetime.fromisoformat(start)
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
             # Make event private to the guild/online location
             scheduled_event = await guild.create_scheduled_event(
                 name=title[:100],
@@ -92,8 +99,12 @@ class GideonBot(discord.Client):
             )
             await message.channel.send(f"✅ Created event **{title}** for {start} ({tz})!")
         except Exception as e:
-            logger.error(f"Discord event creation failed: {e}")
-            await message.channel.send("Sorry, something went wrong creating the event in Discord!")
+            error_log = f"Discord event creation failed: {e}"
+            logger.error(error_log)
+            await message.channel.send(
+                "Sorry, something went wrong creating the event in Discord!\n"
+                f"```py\n{error_log}\n```"
+            )
 
 from bot.openai_client import OpenAIClient
 
