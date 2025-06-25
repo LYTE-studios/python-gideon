@@ -66,14 +66,30 @@ class GideonBot(discord.Client):
         # Gather last 10 recent text messages (for context, oldest first)
         history = []
         async for msg in message.channel.history(limit=10, oldest_first=True):
-            # Only include regular user and bot text messages (skip system/non-content)
             if not msg.content:
                 continue
             role = "assistant" if msg.author.bot else "user"
-            # Optionally: Show only current user and bot messages
             history.append({"role": role, "content": msg.content})
 
-        response = await self.openai_client.ask_chatgpt(content, bot_names=bot_names, history=history)
+        # Simple code/dev-related query detection
+        def is_code_question(msg):
+            code_keywords = [
+                "python", "java", "js", "typescript", "react", "bug", "debug", "error", "stack trace", "exception",
+                "variable", "function", "method", "class", "loop", "array", "dict", "dictionary", "object",
+                "API", "database", "sql", "NoSQL", "compil", "build", "deploy", "docker", "pull request", "PR",
+                "github", "branch", "merge", "conflict", "test case", "test failed", "pytest", "package", "import",
+                "code:", "```", "try:", "def ", "public ", "private ", "const ", "let ", "var "
+            ]
+            text = msg.lower()
+            if "```" in text:
+                return True
+            for kw in code_keywords:
+                if kw in text:
+                    return True
+            return False
+
+        persona = "developer" if is_code_question(content) else "assistant"
+        response = await self.openai_client.ask_chatgpt(content, bot_names=bot_names, history=history, persona=persona)
         if response.strip().upper() == "NO_REPLY":
             logger.info("Assistant chose not to reply to this message.")
             return
