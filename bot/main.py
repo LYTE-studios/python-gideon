@@ -16,38 +16,27 @@ class GideonBot(discord.Client):
         logger.info(f"Listening in channel ID: {self.target_channel_id}")
 
     async def on_message(self, message):
-        # Ignore messages from the bot itself
-        if message.author == self.user:
+        # Ignore messages from the bot itself (or other bots)
+        if message.author.bot:
             return
 
-        # ASSISTANT CHANNEL: respond to all messages
-        if message.channel.id == self.target_channel_id:
-            content = message.content.strip()
-            logger.info(f"Assistant channel message: '{content}'")
-            if not content:
-                return
-            async with message.channel.typing():
-                response = await self.openai_client.ask_chatgpt(content)
-                await message.channel.send(response)
-            return
-
-        # OTHER CHANNELS: only respond if bot is mentioned
-        if self.user not in message.mentions:
-            return
-
-        # Remove the mention (could be at start, end, or middle)
-        content = message.content
-        mention_str = f"<@{self.user.id}>"
-        content = content.replace(mention_str, "").strip()
-        logger.info(f"Bot was mentioned in non-assistant channel. Extracted message: '{content}'")
-
+        content = message.content.strip()
+        logger.info(f"Message in #{message.channel.name}: '{content}'")
         if not content:
-            # Don't respond to empty messages/mentions
             return
 
-        # Call OpenAI to generate a reply
         async with message.channel.typing():
-            response = await self.openai_client.ask_chatgpt(content)
+            # Gather bot's possible names/aliases (username, display_name, 'assistant', 'gideon')
+            bot_names = [
+                str(self.user.name),
+                str(self.user.display_name),
+                "assistant",
+                "gideon"
+            ]
+            response = await self.openai_client.ask_chatgpt(content, bot_names=bot_names)
+            if response.strip().upper() == "NO_REPLY":
+                logger.info("Assistant chose not to reply to this message.")
+                return
             await message.channel.send(response)
 
 from bot.openai_client import OpenAIClient
@@ -62,6 +51,7 @@ def main():
     openai_client = OpenAIClient(api_key=config.get_openai_key())
     intents = discord.Intents.default()
     intents.messages = True
+    intents.message_content = True  # Needed to reliably access message.content
 
     client = GideonBot(
         channel_id=config.get_channel_id(),
