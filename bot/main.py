@@ -22,10 +22,21 @@ class GideonBot(discord.Client):
         if message.channel.id != self.target_channel_id:
             return  # Ignore messages from other channels
 
-        logger.info(f"Received message in target channel: {message.content}")
+        # Only respond if bot is mentioned in the message
+        if self.user not in message.mentions:
+            return
 
-        # For now, just acknowledge receipt for testing
-        await message.channel.send(f"👋 Hi! I see your message: '{message.content}'")
+        # Remove the mention (could be at start, end, or middle)
+        content = message.content
+        mention_str = f"<@{self.user.id}>"
+        content = content.replace(mention_str, "").strip()
+        logger.info(f"Bot was mentioned. Extracted message: '{content}'")
+
+        if not content:
+            # Don't respond to empty messages/mentions
+            return
+
+        await message.channel.send(f"👋 Hi! I see your message: '{content}'")
 
 def main():
     try:
