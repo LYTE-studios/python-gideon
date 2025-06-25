@@ -38,6 +38,7 @@ class OpenAIClient:
             "\n  \"datetime\": \"...\","
             "\n  \"timezone\": \"...\""
             "\n}\n[/SCHEDULE_EVENT]\n"
+            "IMPORTANT: The \"datetime\" field MUST ALWAYS be a valid ISO 8601 string (e.g., 2025-06-25T20:00:00), NOT natural language. DO NOT use 'tonight', 'tomorrow', etc.—always convert to a full ISO timestamp."
             "Do NOT explain the format—ONLY use the event block or 'NO_REPLY'."
             "Otherwise, reply as normal if and ONLY IF the user's message is clearly for you. Be brief, direct, and only respond when 100% confident."
             "Be concise. If asked about future features, answer based on known roadmap plans."
