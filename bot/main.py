@@ -8,11 +8,19 @@ from bot.logger import setup_logger
 
 logger = setup_logger("DiscordBot")
 
+from bot.github_client import GitHubClient
 class GideonBot(discord.Client):
-    def __init__(self, channel_id: int, openai_client, **kwargs):
+    def __init__(self, channel_id: int, openai_client, config=None, **kwargs):
         super().__init__(**kwargs)
         self.target_channel_id = channel_id
         self.openai_client = openai_client
+        self.config = config
+        self.github_client = None
+        if config is not None:
+            from bot.github_client import GitHubClient
+            self.github_client = GitHubClient(
+                config.get_github_token(), config.get_github_repo()
+            )
 
     async def on_ready(self):
         logger.info(f"Bot is online as {self.user}")
@@ -76,11 +84,15 @@ class GideonBot(discord.Client):
             code_keywords = [
                 "python", "java", "js", "typescript", "react", "bug", "debug", "error", "stack trace", "exception",
                 "variable", "function", "method", "class", "loop", "array", "dict", "dictionary", "object",
-                "API", "database", "sql", "NoSQL", "compil", "build", "deploy", "docker", "pull request", "PR",
-                "github", "branch", "merge", "conflict", "test case", "test failed", "pytest", "package", "import",
+                "API", "database", "sql", "NoSQL", "compil", "build", "deploy", "docker", "test case", "test failed", "pytest", "package", "import",
                 "code:", "```", "try:", "def ", "public ", "private ", "const ", "let ", "var "
             ]
+            pr_keywords = [
+                "pull request", "open a pr", "make a pr", "create a pr", "start a pr", "github pr", "review pr", "merge this", "branch and pr"
+            ]
             text = msg.lower()
+            if any(pr_kw in text for pr_kw in pr_keywords):
+                return "pr"
             if "```" in text:
                 return True
             for kw in code_keywords:
@@ -89,7 +101,14 @@ class GideonBot(discord.Client):
             return False
 
         channel_name = str(message.channel.name).lower() if hasattr(message.channel, 'name') else ""
-        persona = "developer" if is_code_question(content) else "assistant"
+        code_check = is_code_question(content)
+        # PR requests delegated for future GH integration (stub)
+        if code_check == "pr":
+            await message.channel.send("👷 PR request detected! This functionality is being implemented and will be available soon.")
+            logger.info("Detected PR automation request.")
+            return
+
+        persona = "developer" if code_check else "assistant"
         response = await self.openai_client.ask_chatgpt(
             content, bot_names=bot_names, history=history, persona=persona, channel_name=channel_name
         )
@@ -318,6 +337,7 @@ def main():
     client = GideonBot(
         channel_id=config.get_channel_id(),
         openai_client=openai_client,
+        config=config,
         intents=intents
     )
     client.run(config.get_token())

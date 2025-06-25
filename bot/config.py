@@ -10,6 +10,8 @@ class BotConfig:
         self.token = os.getenv("DISCORD_BOT_TOKEN")
         self.channel_id = os.getenv("DISCORD_CHANNEL_ID")
         self.openai_key = os.getenv("OPENAI_API_KEY")
+        self.github_token = os.getenv("GITHUB_TOKEN")
+        self.github_repo = os.getenv("GITHUB_REPO")
         self.validate()
 
     def validate(self):
@@ -34,3 +36,13 @@ class BotConfig:
 
     def get_openai_key(self):
         return self.openai_key
+
+    def get_github_token(self):
+        if not self.github_token:
+            logger.error("GITHUB_TOKEN not set in .env")
+        return self.github_token
+
+    def get_github_repo(self):
+        if not self.github_repo:
+            logger.error("GITHUB_REPO not set in .env")
+        return self.github_repo
