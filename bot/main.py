@@ -6,9 +6,10 @@ from bot.logger import setup_logger
 logger = setup_logger("DiscordBot")
 
 class GideonBot(discord.Client):
-    def __init__(self, channel_id: int, **kwargs):
+    def __init__(self, channel_id: int, openai_client, **kwargs):
         super().__init__(**kwargs)
         self.target_channel_id = channel_id
+        self.openai_client = openai_client
 
     async def on_ready(self):
         logger.info(f"Bot is online as {self.user}")
@@ -36,7 +37,11 @@ class GideonBot(discord.Client):
             # Don't respond to empty messages/mentions
             return
 
-        await message.channel.send(f"👋 Hi! I see your message: '{content}'")
+        # Call OpenAI to generate a reply
+        response = await self.openai_client.ask_chatgpt(content)
+        await message.channel.send(response)
+
+from bot.openai_client import OpenAIClient
 
 def main():
     try:
@@ -45,9 +50,15 @@ def main():
         logger.error(f"Config error: {e}")
         exit(1)
 
+    openai_client = OpenAIClient(api_key=config.get_openai_key())
     intents = discord.Intents.default()
     intents.messages = True
-    client = GideonBot(channel_id=config.get_channel_id(), intents=intents)
+
+    client = GideonBot(
+        channel_id=config.get_channel_id(),
+        openai_client=openai_client,
+        intents=intents
+    )
     client.run(config.get_token())
 
 if __name__ == "__main__":

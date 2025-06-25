@@ -23,9 +23,9 @@ This document lists the actionable tasks required to implement Gideon's core Dis
 
 ---
 
-## 3. Listen for @Mention and Extract User Queries
+## 3. Listen for @Mention and Extract User Queries [DONE]
 
-**Description:**  
+**Description:**
 - In the configured channel, listen to all messages.
 - If a message contains “@<BOT_USERNAME>”, extract the relevant user query text.
 - Strip extra whitespace, mentions, or formatting for clean input.
