@@ -101,10 +101,12 @@ class GideonBot(discord.Client):
                 )
             else:
                 entity_type = discord.EntityType.external
+                from datetime import timedelta
+                external_end_dt = start_dt + timedelta(hours=1)
                 scheduled_event = await guild.create_scheduled_event(
                     name=title[:100],
                     start_time=start_dt,
-                    end_time=None,
+                    end_time=external_end_dt,
                     description=desc[:1000] or "No description.",
                     privacy_level=discord.PrivacyLevel.guild_only,
                     entity_type=entity_type,
