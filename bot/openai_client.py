@@ -22,7 +22,14 @@ class OpenAIClient:
             bot_names = [bot_names]
         names_str = ", ".join(f'"{n}"' for n in bot_names if n)
 
+        # Add current date/time context in prompt
+        import datetime
+        import pytz
+        now = datetime.datetime.now(datetime.timezone.utc).astimezone()
+        now_str = now.isoformat()
+        tz_str = now.tzname() or str(now.utcoffset())
         sys_prompt = (
+            f"It is now {now_str} ({tz_str}). "
             f"You are Gideon, a Discord bot assistant. "
             f"Your recognized names and aliases are: {names_str}. "
             "You are very careful not to respond to messages not intended for you. "
@@ -38,7 +45,8 @@ class OpenAIClient:
             "\n  \"datetime\": \"...\","
             "\n  \"timezone\": \"...\""
             "\n}\n[/SCHEDULE_EVENT]\n"
-            "IMPORTANT: The \"datetime\" field MUST ALWAYS be a valid ISO 8601 string (e.g., 2025-06-25T20:00:00), NOT natural language. DO NOT use 'tonight', 'tomorrow', etc.—always convert to a full ISO timestamp."
+            "IMPORTANT: The \"datetime\" field MUST ALWAYS be a valid ISO 8601 string (e.g., 2025-06-25T20:00:00), NOT natural language. DO NOT use 'tonight', 'tomorrow', etc.—always convert to a full ISO timestamp. "
+            "If the user requests a date/time that is in the past, explain that scheduling past events is not possible and ask them to give a valid time in the future."
             "Do NOT explain the format—ONLY use the event block or 'NO_REPLY'."
             "Otherwise, reply as normal if and ONLY IF the user's message is clearly for you. Be brief, direct, and only respond when 100% confident."
             "Be concise. If asked about future features, answer based on known roadmap plans."

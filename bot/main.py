@@ -81,11 +81,23 @@ class GideonBot(discord.Client):
             tz = event_data.get("timezone", "Europe/Brussels")
             title = event_data.get("title", "Scheduled Event")
             desc = event_data.get("description", "")
-            # For now, use text channel as location
-            from datetime import timezone
+            from datetime import timezone, timedelta
             start_dt = datetime.fromisoformat(start)
             if start_dt.tzinfo is None:
                 start_dt = start_dt.replace(tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            if start_dt < now_utc:
+                error_log = (
+                    f"Scheduled start time is in the past. "
+                    f"start_dt={start_dt.isoformat()}, now_utc={now_utc.isoformat()}"
+                )
+                logger.error(error_log)
+                await message.channel.send(
+                    "Sorry, the event couldn't be created because the scheduled time is in the past. "
+                    "Please use a future date/time!\n"
+                    f"```py\n{error_log}\n```"
+                )
+                return
             # Make event private to the guild/online location
             # Decide event type
             if message.channel.type == discord.ChannelType.voice:
@@ -101,8 +113,19 @@ class GideonBot(discord.Client):
                 )
             else:
                 entity_type = discord.EntityType.external
-                from datetime import timedelta
                 external_end_dt = start_dt + timedelta(hours=1)
+                if external_end_dt < now_utc:
+                    error_log = (
+                        f"Scheduled end time is in the past. "
+                        f"external_end_dt={external_end_dt.isoformat()}, now_utc={now_utc.isoformat()}"
+                    )
+                    logger.error(error_log)
+                    await message.channel.send(
+                        "Sorry, the event couldn't be created because the end time is in the past. "
+                        "Please use a future date/time!\n"
+                        f"```py\n{error_log}\n```"
+                    )
+                    return
                 scheduled_event = await guild.create_scheduled_event(
                     name=title[:100],
                     start_time=start_dt,
