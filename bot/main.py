@@ -319,23 +319,38 @@ class GideonBot(discord.Client):
 
     async def _find_event(self, guild, title, dt_str):
         """
-        Find the closest matching scheduled event by title and datetime (ISO), fallback to best match.
+        Find the closest matching scheduled event by title and datetime (ISO), fallback to best (fuzzy) match if needed.
         """
         events = await guild.fetch_scheduled_events()
+        norm = lambda s: s.lower() if s else ""
+        title_norm = norm(title)
+        dt_norm = norm(dt_str)
+        found_event = None
+
+        # Try exact datetime+title match
         for ev in events:
             if dt_str:
                 try:
                     iso_cmp = ev.scheduled_start_time.isoformat().replace("+00:00", "Z")
                     # Allow match with or without ms, Z or not
                     if iso_cmp.startswith(dt_str.replace("+00:00", "Z")) or dt_str.startswith(iso_cmp):
-                        if title and title.lower() in ev.name.lower():
+                        if title and title_norm in norm(ev.name):
                             return ev
                         if not title:
                             return ev
                 except Exception:
                     continue
-            if title and title.lower() in ev.name.lower():
-                return ev
+        # If no datetime, try title-based fuzzy match (most recent first)
+        if title:
+            for ev in sorted(events, key=lambda e: e.scheduled_start_time, reverse=True):
+                if title_norm in norm(ev.name) or title_norm in norm(ev.description):
+                    return ev
+        # If neither found, but only one event exists, assume that's what user means
+        if len(events) == 1:
+            return events[0]
+        # Fallback: return most recent if nothing else
+        if events:
+            return sorted(events, key=lambda e: e.scheduled_start_time, reverse=True)[0]
         return None
 
 from bot.openai_client import OpenAIClient
