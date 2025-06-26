@@ -126,13 +126,84 @@ class GideonBot(discord.Client):
             logger.info("Detected PR automation request.")
             return
 
-        persona = "developer" if code_check else "assistant"
-        response = await self.openai_client.ask_chatgpt(
-            content, bot_names=bot_names, history=history, persona=persona, channel_name=channel_name
-        )
+        # ROUTING LOGIC: Call router LLM to select persona/service
+        router = self.openai_client
+        router_persona = await router.ask_router_persona(content)
 
-        # Remove NO_REPLY logic: LLM must answer everything routed here
-        # Previously: if response.strip().upper() == "NO_REPLY": ...
+        # always start typing right before handling (for any delegated step)
+        async with message.channel.typing():
+            if router_persona == "DEVELOPER":
+                response = await self.openai_client.ask_chatgpt(
+                    content, bot_names=bot_names, history=history, persona="developer", channel_name=channel_name
+                )
+                await message.channel.send(response)
+            elif router_persona == "EVENT":
+                # The first LLM pass decides intent; second pass handles specifics (cancel/create/update)
+                # Default: ask_chatgpt with persona="assistant" to prompt for event action or structured block
+                response = await self.openai_client.ask_chatgpt(
+                    content, bot_names=bot_names, history=history, persona="assistant", channel_name=channel_name
+                )
+                # The rest of the event logic (SCHEDULE_EVENT, CANCEL_EVENT, etc.) is handled as before
+                # Re-use existing parsing branches below (sched_match, update_match, cancel_match...)
+                sched_match = re.search(r"\[SCHEDULE_EVENT\](.*?)\[/SCHEDULE_EVENT\]", response, re.DOTALL)
+                update_match = re.search(r"\[UPDATE_EVENT\](.*?)\[/UPDATE_EVENT\]", response, re.DOTALL)
+                cancel_match = re.search(r"\[CANCEL_EVENT\](.*?)\[/CANCEL_EVENT\]", response, re.DOTALL)
+
+                if sched_match:
+                    block = sched_match.group(1).strip()
+                    try:
+                        event_data = json.loads(block)
+                        logger.info(f"Scheduling Discord event: {event_data}")
+                        await self.create_discord_event(message, event_data)
+                        return
+                    except Exception as e:
+                        error_log = f"Failed to parse or create event: {e}\nBlock:{block}"
+                        logger.error(error_log)
+                        await message.channel.send(
+                            "Sorry, I couldn't schedule that event (invalid details or Discord error).\n"
+                            f"```py\n{error_log}\n```"
+                        )
+                        return
+                elif update_match:
+                    block = update_match.group(1).strip()
+                    try:
+                        event_data = json.loads(block)
+                        logger.info(f"Updating Discord event: {event_data}")
+                        await self.update_discord_event(message, event_data)
+                        return
+                    except Exception as e:
+                        error_log = f"Failed to parse or update event: {e}\nBlock:{block}"
+                        logger.error(error_log)
+                        await message.channel.send(
+                            "Sorry, I couldn't update that event (invalid details or Discord error).\n"
+                            f"```py\n{error_log}\n```"
+                        )
+                        return
+                elif cancel_match:
+                    block = cancel_match.group(1).strip()
+                    try:
+                        event_data = json.loads(block)
+                        logger.info(f"Cancelling Discord event: {event_data}")
+                        await self.cancel_discord_event(message, event_data)
+                        return
+                    except Exception as e:
+                        error_log = f"Failed to parse or cancel event: {e}\nBlock:{block}"
+                        logger.error(error_log)
+                        await message.channel.send(
+                            "Sorry, I couldn't cancel that event (invalid details or Discord error).\n"
+                            f"```py\n{error_log}\n```"
+                        )
+                        return
+                else:
+                    await message.channel.send(
+                        "Sorry, I couldn't understand what to do with your event request. Please specify create, update, or cancel."
+                    )
+            else:
+                # Default to assistant (for "ASSISTANT" or error/fallback)
+                response = await self.openai_client.ask_chatgpt(
+                    content, bot_names=bot_names, history=history, persona="assistant", channel_name=channel_name
+                )
+                await message.channel.send(response)
 
         # typing only if we are actually responding
         async with message.channel.typing():
@@ -304,11 +375,42 @@ class GideonBot(discord.Client):
             title = event_data.get("title")
             dt_str = event_data.get("datetime")
             found_event = await self._find_event(guild, title, dt_str)
+            # If not found, use LLM to disambiguate among all events
             if not found_event:
-                await message.channel.send(f"Sorry, couldn't find an event to cancel for title/datetime: {title} / {dt_str}")
+                events = await guild.fetch_scheduled_events()
+                event_summaries = [
+                    {
+                        "id": str(e.id),
+                        "name": e.name,
+                        "description": (e.description or ""),
+                        "start_time": e.scheduled_start_time.isoformat() if e.scheduled_start_time else "",
+                    }
+                    for e in events
+                ]
+                # Ask LLM which event should be canceled
+                llm = self.openai_client
+                llm_event_id = await llm.ask_select_event_to_cancel(
+                    original_prompt=message.content, events=event_summaries
+                )
+                if not llm_event_id or llm_event_id.upper() == "NONE":
+                    await message.channel.send("Sorry, couldn't determine which event to cancel. Please specify the exact event or time.")
+                    return
+                ids_to_cancel = [id_.strip() for id_ in llm_event_id.split(",") if id_.strip()]
+                ids_found = set(e.id for e in events)
+                any_cancelled = False
+                for eid in ids_to_cancel:
+                    if eid.isdigit() and int(eid) in ids_found:
+                        ev = next(ev for ev in events if ev.id == int(eid))
+                        await ev.delete()
+                        await message.channel.send(f"🗑️ Cancelled event **{ev.name}** (id={eid}).")
+                        any_cancelled = True
+                if not any_cancelled:
+                    await message.channel.send(f"Tried to cancel event(s) with id(s) {', '.join(ids_to_cancel)}, but none were found.")
                 return
+
+            # Otherwise, standard workflow (found event)
             await found_event.delete()
-            await message.channel.send(f"🗑️ Cancelled event **{title}**.")
+            await message.channel.send(f"🗑️ Cancelled event **{found_event.name}**.")
         except Exception as e:
             error_log = f"Event cancel failed: {e}"
             logger.error(error_log)

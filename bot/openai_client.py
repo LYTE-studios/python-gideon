@@ -99,15 +99,94 @@ class OpenAIClient:
             "temperature": 0.7
         }
 
+
+
+async def ask_select_event_to_cancel(self, original_prompt: str, events: list) -> str:
+        """
+        Given user cancel prompt and a list of events, ask LLM which event to cancel.
+        events: list of dicts with id, title, description, start_time (iso)
+        Returns: the event id string (or csv if more than one to cancel)
+        """
+        sys_prompt = (
+            "You are an expert Discord scheduling assistant. "
+            "The user wants to cancel an event, but it's ambiguous. "
+            "Below is a list of scheduled events in the server and the user's command."
+            "Please choose the ONE correct event id (or a CSV list if cancelling multiple), and output ONLY the id(s) in your response, nothing else."
+            "If you are unsure, pick the closest likely match. If no event fits, reply with 'NONE'."
+            "\nEvents:\n"
+        )
+        events_str = "\n".join(
+            f"  - id={ev['id']} title={ev['name']} time={ev['start_time']} desc={ev.get('description','')}" for ev in events
+        )
+        full_prompt = (
+            sys_prompt
+            + events_str
+            + "\nUser command: "
+            + original_prompt
+            + "\nWhich event id(s) should be cancelled (csv or single id, or NONE)?"
+        )
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": full_prompt}
+            ],
+            "max_tokens": 32,
+            "temperature": 0.1
+        }
+        import aiohttp
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.api_url, json=payload, headers=headers, timeout=30) as resp:
                     if resp.status != 200:
-                        logger.error(f"OpenAI API returned {resp.status}: {await resp.text()}")
-                        return "Sorry, I couldn't generate an answer right now (OpenAI error)."
+                        logger.error(f"OpenAI event select to cancel failure: {resp.status}: {await resp.text()}")
+                        return ""
                     data = await resp.json()
                     content = data["choices"][0]["message"]["content"]
                     return content.strip()
         except Exception as e:
-            logger.error(f"OpenAI API failure: {e}")
-            return "Sorry, something went wrong with my assistant brain (OpenAI error)."
+            logger.error(f"OpenAI event select to cancel failure: {e}")
+            return ""
+
+
+async def ask_router_persona(self, message: str) -> str:
+        """
+        Calls a dedicated router system prompt to select from predefined personas/services.
+        Returns the selected persona string, e.g. 'DEVELOPER', 'EVENT', 'ASSISTANT'.
+        """
+        system_prompt = (
+            "You are a routing assistant. You will be given a user's message. "
+            "You MUST select and output EXACTLY ONE of these personalities or services "
+            "(no natural language):\n\n"
+            "DEVELOPER: for any programming, code, bug, review, code generation, software/dev questions.\n"
+            "EVENT: for anything related to meeting scheduling, event planning, reminders, times, or Discord event management.\n"
+            "ASSISTANT: for all other requests—productivity, general knowledge, fun, or when the request fits none of the above.\n\n"
+            "Return only the one service/personality name (no extra text, no chat, uppercase, no explanations)."
+        )
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message},
+            ],
+            "max_tokens": 12,
+            "temperature": 0.0
+        }
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.api_url, json=payload, headers={
+                    "Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"
+                }, timeout=30) as resp:
+                    if resp.status != 200:
+                        logger.error(f"Router LLM returned {resp.status}: {await resp.text()}")
+                        return ""
+                    data = await resp.json()
+                    content = data["choices"][0]["message"]["content"]
+                    return content.strip().upper()
+        except Exception as e:
+            logger.error(f"Router LLM persona select failure: {e}")
+            return ""
