@@ -60,6 +60,24 @@ class GideonBot(discord.Client):
         if not content:
             return
 
+        main_channel_id = self.target_channel_id
+        in_main_channel = (message.channel.id == main_channel_id)
+
+        # Per-instructions:
+        # In non-main channels, only respond if
+        #   (A) the bot is mentioned
+        #   (B) the message is a reply to the bot's message
+        def is_reply_to_bot(msg):
+            # Discord implements reply by message reference
+            return msg.reference and hasattr(msg.reference, "resolved") and getattr(msg.reference.resolved, "author", None) == self.user
+
+        explicitly_mentioned = self.user in message.mentions
+        replying_to_bot = is_reply_to_bot(message)
+
+        if not in_main_channel and not (explicitly_mentioned or replying_to_bot):
+            logger.info("Ignoring message: not in main channel, not mentioned, not a reply to me.")
+            return
+
         import re
         import json
         from datetime import datetime
@@ -112,9 +130,9 @@ class GideonBot(discord.Client):
         response = await self.openai_client.ask_chatgpt(
             content, bot_names=bot_names, history=history, persona=persona, channel_name=channel_name
         )
-        if response.strip().upper() == "NO_REPLY":
-            logger.info("Assistant chose not to reply to this message.")
-            return
+
+        # Remove NO_REPLY logic: LLM must answer everything routed here
+        # Previously: if response.strip().upper() == "NO_REPLY": ...
 
         # typing only if we are actually responding
         async with message.channel.typing():
