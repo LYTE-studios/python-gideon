@@ -143,6 +143,10 @@ class GideonBot(discord.Client):
                 response = await self.openai_client.ask_chatgpt(
                     content, bot_names=bot_names, history=history, persona="assistant", channel_name=channel_name
                 )
+                if not response or not isinstance(response, str):
+                    await message.channel.send("Sorry, I couldn't process your request right now (event handler problem). Please try again.")
+                    logger.error("ask_chatgpt returned None or non-string for event route.")
+                    return
                 # The rest of the event logic (SCHEDULE_EVENT, CANCEL_EVENT, etc.) is handled as before
                 # Re-use existing parsing branches below (sched_match, update_match, cancel_match...)
                 sched_match = re.search(r"\[SCHEDULE_EVENT\](.*?)\[/SCHEDULE_EVENT\]", response, re.DOTALL)
